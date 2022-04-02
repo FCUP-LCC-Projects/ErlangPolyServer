@@ -1,9 +1,8 @@
 -module(polynomial).
--export([start/0, add/2,sub/2, mult/2, stop/0, loop/0]).
+-export([add_p/1,sub_p/1, mult_p/2, sort/1, add_list/1]).
 -import('lists', [max/1, append/2, member/2]).
--import(print, [printPol/1]).
 
-start() -> register(polynomial, spawn(fun() -> loop() end)).
+
 
 coef({_, C, _}) -> C.
 
@@ -11,7 +10,7 @@ exp({_,_,[E|T]}) -> lists:max([E|T]);
 exp({_, _, E}) -> E.
 
 exp(_, {[], _, []}) -> [];
-exp({V,C,E}, {[V|VL], C2, [E2|EL]}) -> NewExp = E+E2, [NewExp] ++ exp({V,C,E}, {VL,C2,EL});
+exp({V,C,E}, {[V|VL], C2, [E2|EL]}) -> NewExp = E+E2, [NewExp] ++ EL;
 exp({V,C,E}, {[_|VL], C2, [E2|EL]}) -> [E2] ++ exp({V,C,E}, {VL,C2,EL}).
 
 variable({V,_,_}) ->V.
@@ -35,6 +34,7 @@ add_s([H, N|T]) ->
 
 add_list([{A,C,E}, {A,C2,E}|T]) -> NewCoef = C+C2,
                               add_p([{A, NewCoef, E}|T]);
+
 add_list([M,H|T]) -> [M]++add_p([H|T]).
 
 add_p([H]) -> [H];
@@ -50,14 +50,17 @@ add_p([{V, C, E}, {VH, CH, EH}|T]) ->
 
 sub_s([H, N|T]) ->
   case canOperate(H,N) of
-      true ->   NewCoef = coef(H)-coef(N),
+      true ->   NewCoef = coef(H) - coef(N),
                 sub_p([{variable(H), NewCoef, exp(H)} | T]);
 
       false ->  [H] ++ sub_p([N|T])
   end.
 
-sub_list([{A,C,E}, {A,C2,E}|T]) -> NewCoef = C-C2,
-                            sub_p([{A, NewCoef, E}|T]).
+
+sub_list([{A,C,E}, {A,C2,E}|T]) -> NewCoef = C - C2,
+                                  sub_p([{A, NewCoef, E}|T]);
+
+sub_list([M,H|T]) -> [M]++sub_p([H|T]).
 
 sub_p([H]) -> [H];
 sub_p([H,N|T]) ->
@@ -67,6 +70,9 @@ sub_p([H,N|T]) ->
     false -> sub_s([H,N|T])
   end.
 
+
+%% makes sure the word const is never added to variable lists
+%% also creates list for newly formed multi-variable polynomials
 
 checkForConst({V,C,E}, {const, C2,_}) -> {V, C*C2, E};
 checkForConst({const,C,_}, {V, C2,E2}) -> {V, C*C2, E2};
@@ -80,6 +86,7 @@ checkForConst({V,C,E}, {VL,C2,EL}) ->
 
 %%list to simple thats not already in list
 mult_var_simple({V, C, E}, {VH, CH, EH}) -> [checkForConst({V, C, E}, {VH, CH, EH})].
+
 
 %%list to simple thats on the list
 
@@ -111,21 +118,19 @@ mult_var_list({[V|VL],C,[E|EL]}, {VL2, C2, EL2}) ->
               mult_var_list({VL,C,EL},NewList)
     end.
 
-
-mult_list({V,C,E}, {VH,CH,EH}) ->[checkForConst({V,C,E}, {VH,CH,EH}];
+%both simple
 
 mult_list({V,C,E}, {V,CH,EH}) ->
-            NewCoef = C*CH,
-            NewExp = E+EH,
-            [{V,NewCoef,NewExp}].
+                NewCoef = C*CH,
+                NewExp = E+EH,
+                [{V,NewCoef,NewExp}];
 
+mult_list({V,C,E}, {VH,CH,EH}) -> [checkForConst({V,C,E}, {VH,CH,EH})].
+
+%%
 
 mult_r([], _) -> [];
 mult_r([H|T], L) -> mult_aval(H, L) ++ mult_r(T, L).
-
-mult_p(M, S) -> List = mult_r(M,S),
-              Minimized = add_s(List),
-              sort(Minimized).
 
 mult_aval_f(M, H) ->
   case is_list(variable(H)) of
@@ -149,47 +154,6 @@ mult_aval(M, [H|L]) ->
       false -> mult_aval_s(M,H) ++ mult_aval(M, L)
     end.
 
-
-
-
-
-add(M,S) ->
-    polynomial ! {add, self(), M, S},
-    receive
-      {ok, Result} -> print:printPol(Result), Result
-    end.
-
-sub(M, S) ->
-    polynomial ! {sub, self(), M, S},
-    receive
-      {ok, Result} -> print:printPol(Result), Result
-    end.
-
-mult(M, S) ->
-    polynomial ! {mult, self(), M, S},
-    receive
-      {ok, Result} -> print:printPol(Result), Result
-    end.
-
-stop() ->
-   polynomial ! {stop, self()},
-   ok.
-
-
-
-
-
-loop() ->
-    receive
-      {add, From, M,S} ->  Sorted = sort(M ++ S),
-                              From ! {ok, add_p(Sorted)},
-                              loop();
-      {sub,From, M,S} ->  Sorted = sort(M ++ S),
-                              From ! {ok, sub_p(Sorted)},
-                              loop();
-      {mult,From, M,S} -> Sorted_M = sort(M),
-                          Sorted_S = sort(S),
-                              From ! {ok, mult_p(Sorted_M, Sorted_S)},
-                              loop();
-      {stop, _, _} -> ok
-    end.
+mult_p(M, S) -> List = mult_r(M,S),
+              Sorted = sort(List),
+              add_s(Sorted).
